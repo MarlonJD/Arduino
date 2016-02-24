@@ -21,9 +21,7 @@
 #define REDPIN 6
 #define GREENPIN 7
 
-const int cardArrSize = 10;
-const int cardSize    = 4;
-byte cardArr[cardArrSize][cardSize];
+const int cardSize = 4;
 byte masterCard[cardSize] = {29,156,78,37};
 byte readCard[cardSize];
 
@@ -38,15 +36,55 @@ byte currentState = STATE_STARTUP;
 unsigned long LastStateChangeTime;
 unsigned long StateWaitTime;
 
+//------------------------------------------------------------------------------------
+void StartSD()
+{
+  pinMode(SD_SS_PIN, OUTPUT);
+  pinMode(MFRC_SS_PIN, OUTPUT);
+
+  digitalWrite(SD_SS_PIN, LOW);
+  digitalWrite(MFRC_SS_PIN, HIGH);
+}
 
 //------------------------------------------------------------------------------------
-boolean findCard(byte* aCard[cardSize])
+void StartMFRC()
+{
+  pinMode(SD_SS_PIN, OUTPUT);
+  pinMode(MFRC_SS_PIN, OUTPUT);
+
+  digitalWrite(SD_SS_PIN, HIGH);
+  digitalWrite(MFRC_SS_PIN, LOW);
+}
+
+//------------------------------------------------------------------------------------
+void PrintCard()
+{
+  int index;
+
+  Serial.print("Card - ");
+  for(index = 0; index < 4; index++)
+  {
+    if (index > 0)
+    {
+      Serial.print(",");
+    }
+    Serial.print(readCard[index]);
+  }
+  Serial.println(" ");
+}
+
+//------------------------------------------------------------------------------------
+boolean findCard()
 {
   SdFile readFile;
   char inputChar;
-  byte readCard[cardSize];
+  byte currentCard[cardSize];
   int cardIndex;
 
+  //Serial.print("find ");
+  //PrintCard();
+
+  StartSD();
   if (!sd.exists("cards.txt"))
   {
     return false;
@@ -63,38 +101,97 @@ boolean findCard(byte* aCard[cardSize])
   {
     if (inputChar != '\n')
     {
-      readCard[cardIndex] = inputChar;
+      currentCard[cardIndex] = inputChar;
       cardIndex ++;
     }
     else
     {
-      if ((memcmp(readCard, *aCard, 4)) == 0)
+      if ((memcmp(currentCard, readCard, 4)) == 0)
       {
         readFile.close();
+
+        //Serial.println("found card");
+        StartMFRC();
         return true;
       }
       cardIndex = 0;
     }
     inputChar = readFile.read();
   }
-
+  StartMFRC();
   return false;
 }
 
 //------------------------------------------------------------------------------------
-void addCard(byte* aCard[cardSize])
+void addCard()
 {
-  if (!sd.exists("cards.txt"))
-  {
-    
+  int index;
+  SdFile writeFile;
+
+  //Serial.print("add ");
+  //PrintCard();
+  StartSD();
+  if (writeFile.open("cards.txt", O_RDWR | O_CREAT | O_AT_END))
+  { 
+    for(index = 0; index < 4; index++)
+    {
+      writeFile.print(readCard[index]); 
+    }
+    writeFile.print('\n'); 
+    writeFile.close();
   }
-  
+  StartMFRC();
   return;
 }
 
 //------------------------------------------------------------------------------------
-void removeCard(byte* aCard[cardSize])
+void removeCard()
 {
+  int cardIndex;
+  SdFile readFile;
+  SdFile writeFile;
+  byte currentCard[cardSize];
+  char inputChar;
+  int index;
+
+  //Serial.print("remove ");
+  //PrintCard();
+  StartSD();
+  if (!sd.exists("cards.txt"))
+  {
+    if (readFile.open("cards.txt", O_RDWR | O_CREAT | O_AT_END))
+    { 
+      if (writeFile.open("cards_new.txt", O_RDWR | O_CREAT | O_AT_END))
+      {
+        cardIndex = 0;
+        inputChar = readFile.read();
+        while (inputChar != 'eof')
+        {
+          if (inputChar != '\n')
+          {
+            currentCard[cardIndex] = inputChar;
+            cardIndex ++;
+          }
+          else
+          {
+            if (!((memcmp(currentCard, readCard, 4)) == 0))
+            {
+              for(index = 0; index < 4; index++)
+              {
+                 writeFile.print(currentCard[index]); 
+              }
+              writeFile.print('\n'); 
+            }
+            cardIndex = 0;
+          }
+          inputChar = readFile.read();
+        }
+        writeFile.close();
+      }
+      readFile.close();
+    }
+  }
+  StartMFRC();
   return;
 }
 
@@ -103,18 +200,11 @@ int readCardState()
 {
   int index;
 
-  Serial.print("Card Data - ");
   for(index = 0; index < 4; index++)
   {
     readCard[index] = mfrc522.uid.uidByte[index];
-
-    Serial.print(readCard[index]);
-    if (index < 3)
-    {
-      Serial.print(",");
-    }
   }
-  Serial.println(" ");
+  //PrintCard();
 
   //Check Master Card
   if ((memcmp(readCard, masterCard, 4)) == 0)
@@ -122,61 +212,12 @@ int readCardState()
     return STATE_SCAN_MASTER;
   }
 
-  if (findCard(readCard))
+  if (findCard() == true)
   {
     return STATE_SCAN_VALID;
   }
 
  return STATE_SCAN_INVALID;
-}
-
-//------------------------------------------------------------------------------------
-void addReadCard()
-{
-  int cardIndex;
-  int index;
-
-  if (cardsStored <= 20)
-  {
-    cardsStored++;
-    cardIndex = cardsStored;
-    cardIndex--;
-  }
-
-  for(index = 0; index < 4; index++)
-  {
-    cardArr[cardIndex][index] = readCard[index];
-  }
-}
-
-//------------------------------------------------------------------------------------
-void removeReadCard() 
-{     
-  int cardIndex;
-  int index;
-  boolean found = false;
-  
-  for(cardIndex = 0; cardIndex < cardsStored; cardIndex++)
-  {
-    if (found == true)
-    {
-      for(index = 0; index < 4; index++)
-      {
-        cardArr[cardIndex-1][index] = cardArr[cardIndex][index];
-        cardArr[cardIndex][index] = 0;
-      }
-    }
-    
-    if ((memcmp(readCard, cardArr[cardIndex], 4)) == 0)
-    {
-      found = true;
-    }
-  }
-
-  if (found == true)
-  {
-    cardsStored--;
-  }
 }
 
 //------------------------------------------------------------------------------------
@@ -206,18 +247,21 @@ void updateState(byte aState)
       DisplayInfo("RFID Scanner", "Starting up", HIGH, HIGH);
       StateWaitTime = 1000;
       break;
+      
     case STATE_STARTUP_ERROR:
       DisplayInfo("Error", "SD card", HIGH, HIGH);
       StateWaitTime = 1000;
       break;
+      
     case STATE_WAITING:
       DisplayInfo("Waiting for Card", "to be swiped", LOW, LOW);
       StateWaitTime = 1000;
       break;
+      
     case STATE_SCAN_INVALID:
       if (currentState == STATE_SCAN_MASTER)
       {
-        addReadCard();
+        addCard();
         aState = STATE_ADDED_CARD;
 
         DisplayInfo("Card Scanned", "Card Added", LOW, HIGH);
@@ -233,10 +277,11 @@ void updateState(byte aState)
         StateWaitTime = 2000;
       }
       break;
+      
     case STATE_SCAN_VALID:
       if (currentState == STATE_SCAN_MASTER)
       {
-        removeReadCard();
+        removeCard();
         aState = STATE_REMOVED_CARD;
 
         DisplayInfo("Card Scanned", "Card Removed", LOW, HIGH);
@@ -252,11 +297,17 @@ void updateState(byte aState)
         StateWaitTime = 2000;
       }
       break;
+      
     case STATE_SCAN_MASTER:
       DisplayInfo("Master Card", "", LOW, HIGH);
       StateWaitTime = 5000;
       break;
   }
+
+  //Serial.print("Current State - ");
+  //Serial.print(currentState);
+  //Serial.print(", New State - ");
+  //Serial.println(aState);
 
   currentState = aState;
   LastStateChangeTime = millis();
@@ -281,7 +332,7 @@ void setup()
   pinMode(REDPIN, OUTPUT);
   pinMode(GREENPIN, OUTPUT);
 
-  Serial.begin(9600);
+  //Serial.begin(9600);
 }
 
 //------------------------------------------------------------------------------------
