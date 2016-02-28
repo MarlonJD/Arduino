@@ -20,6 +20,7 @@
 
 #define REDPIN 6
 #define GREENPIN 7
+#define RELAYPIN 5
 
 const int cardSize = 4;
 byte masterCard[cardSize] = {29,156,78,37};
@@ -248,6 +249,7 @@ void updateState(byte aState)
       break;
       
     case STATE_WAITING:
+      digitalWrite(RELAYPIN, LOW);
       DisplayInfo("Waiting for Card", "to be swiped", LOW, LOW);
       StateWaitTime = 1000;
       break;
@@ -287,6 +289,7 @@ void updateState(byte aState)
       }
       else
       {
+        digitalWrite(RELAYPIN, HIGH);
         DisplayInfo("Card Scanned", "Valid Card", LOW, HIGH);
         StateWaitTime = 2000;
       }
@@ -325,6 +328,8 @@ void setup()
 
   pinMode(REDPIN, OUTPUT);
   pinMode(GREENPIN, OUTPUT);
+  pinMode(RELAYPIN, OUTPUT);
+  digitalWrite(RELAYPIN, LOW);
 
   Serial.begin(9600);
 }
