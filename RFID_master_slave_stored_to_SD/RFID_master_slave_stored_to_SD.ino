@@ -4,9 +4,9 @@
 #include <LiquidCrystal_I2C.h>
 #include <SdFat.h>
 
-#define MFRC_RST_PIN 8
-#define MFRC_SS_PIN  9
-#define SD_SS_PIN    10
+#define MFRC_RST_PIN 9
+#define MFRC_SS_PIN  10
+#define SD_SS_PIN    8
 
 #define STATE_STARTUP       0
 #define STATE_STARTUP_ERROR 1
@@ -23,7 +23,7 @@
 
 const int cardSize = 4;
 byte masterCard[cardSize] = {29,156,78,37};
-byte readCard[cardSize];
+byte readCard[cardSize] = {0,0,0,0};
 
 // Create MFRC522 instance
 MFRC522 mfrc522(MFRC_SS_PIN, MFRC_RST_PIN);
@@ -36,28 +36,11 @@ byte currentState = STATE_STARTUP;
 unsigned long LastStateChangeTime;
 unsigned long StateWaitTime;
 
-//------------------------------------------------------------------------------------
-void StartSD()
-{
-  pinMode(SD_SS_PIN, OUTPUT);
-  pinMode(MFRC_SS_PIN, OUTPUT);
-
-  digitalWrite(SD_SS_PIN, LOW);
-  digitalWrite(MFRC_SS_PIN, HIGH);
-}
+char cardFile[] = "cards.txt";
+char cardTempFile[] = "cardsTemp.txt";
 
 //------------------------------------------------------------------------------------
-void StartMFRC()
-{
-  pinMode(SD_SS_PIN, OUTPUT);
-  pinMode(MFRC_SS_PIN, OUTPUT);
-
-  digitalWrite(SD_SS_PIN, HIGH);
-  digitalWrite(MFRC_SS_PIN, LOW);
-}
-
-//------------------------------------------------------------------------------------
-void PrintCard()
+void PrintCard(byte printCard[cardSize])
 {
   int index;
 
@@ -68,7 +51,7 @@ void PrintCard()
     {
       Serial.print(",");
     }
-    Serial.print(readCard[index]);
+    Serial.print(printCard[index]);
   }
   Serial.println(" ");
 }
@@ -76,49 +59,50 @@ void PrintCard()
 //------------------------------------------------------------------------------------
 boolean findCard()
 {
-  SdFile readFile;
-  char inputChar;
   byte currentCard[cardSize];
-  int cardIndex;
+  char text[10];
+  char c1;
+  int  index;
+  int  value;
 
   //Serial.print("find ");
-  //PrintCard();
+  //PrintCard(readCard);
 
-  StartSD();
-  if (!sd.exists("cards.txt"))
+  // open input file
+  ifstream readStr(cardFile);
+
+  // check for open error
+  if (!readStr.is_open())
   {
     return false;
   }
 
-  if (!readFile.open("cards.txt", O_RDWR | O_CREAT | O_AT_END))
+  index = 0;
+  // read until input fails
+  while (!readStr.eof()) 
   {
-    return false;
-  }
+    readStr >> value >> c1; 
 
-  cardIndex = 0;
-  inputChar = readFile.read();
-  while (inputChar != 'eof')
-  {
-    if (inputChar != '\n')
+    if (readStr.fail()) 
     {
-      currentCard[cardIndex] = inputChar;
-      cardIndex ++;
+      break;
     }
-    else
+
+    currentCard[index] = value;
+    
+    index++;
+    if (index > 3)
     {
+      //Serial.print("file read ");
+      //PrintCard(currentCard);
       if ((memcmp(currentCard, readCard, 4)) == 0)
       {
-        readFile.close();
-
-        //Serial.println("found card");
-        StartMFRC();
         return true;
-      }
-      cardIndex = 0;
+      } 
+      index = 0;
     }
-    inputChar = readFile.read();
   }
-  StartMFRC();
+
   return false;
 }
 
@@ -129,69 +113,78 @@ void addCard()
   SdFile writeFile;
 
   //Serial.print("add ");
-  //PrintCard();
-  StartSD();
-  if (writeFile.open("cards.txt", O_RDWR | O_CREAT | O_AT_END))
+  //PrintCard(readCard);
+  if (writeFile.open(cardFile, O_RDWR | O_CREAT | O_AT_END))
   { 
     for(index = 0; index < 4; index++)
     {
       writeFile.print(readCard[index]); 
+      writeFile.print(",");
     }
-    writeFile.print('\n'); 
     writeFile.close();
   }
-  StartMFRC();
   return;
 }
 
 //------------------------------------------------------------------------------------
 void removeCard()
 {
-  int cardIndex;
-  SdFile readFile;
-  SdFile writeFile;
   byte currentCard[cardSize];
-  char inputChar;
-  int index;
+  char text[10];
+  char c1;
+  int  readIndex, writeIndex;
+  int  value;
+  SdFile writeFile;
 
   //Serial.print("remove ");
-  //PrintCard();
-  StartSD();
-  if (!sd.exists("cards.txt"))
+  //PrintCard(readCard);
+
+  // open input file
+  ifstream readStr(cardFile);
+
+  // check for open error
+  if (!readStr.is_open())
   {
-    if (readFile.open("cards.txt", O_RDWR | O_CREAT | O_AT_END))
-    { 
-      if (writeFile.open("cards_new.txt", O_RDWR | O_CREAT | O_AT_END))
+    return;
+  }
+
+  if (writeFile.open(cardTempFile, O_RDWR | O_CREAT | O_AT_END))
+  {
+    readIndex = 0;
+
+    while (!readStr.eof()) 
+    {
+      readStr >> value >> c1; 
+
+      if (readStr.fail()) 
       {
-        cardIndex = 0;
-        inputChar = readFile.read();
-        while (inputChar != 'eof')
-        {
-          if (inputChar != '\n')
-          {
-            currentCard[cardIndex] = inputChar;
-            cardIndex ++;
-          }
-          else
-          {
-            if (!((memcmp(currentCard, readCard, 4)) == 0))
-            {
-              for(index = 0; index < 4; index++)
-              {
-                 writeFile.print(currentCard[index]); 
-              }
-              writeFile.print('\n'); 
-            }
-            cardIndex = 0;
-          }
-          inputChar = readFile.read();
-        }
-        writeFile.close();
+        break;
       }
-      readFile.close();
+
+      currentCard[readIndex] = value;
+    
+      readIndex++;
+      if (readIndex > 3)
+      {
+        //Serial.print("file write ");
+        //PrintCard(currentCard);
+        if (!((memcmp(currentCard, readCard, 4)) == 0))
+        {
+          for (writeIndex = 0; writeIndex < 4; writeIndex++)
+          {
+            writeFile.print(currentCard[writeIndex]); 
+            writeFile.print(",");
+          }
+          writeFile.close();
+        }
+      } 
+      readIndex = 0;
     }
   }
-  StartMFRC();
+
+  sd.remove(cardFile);
+  sd.rename(cardTempFile, cardFile);
+  
   return;
 }
 
@@ -204,6 +197,7 @@ int readCardState()
   {
     readCard[index] = mfrc522.uid.uidByte[index];
   }
+  //Serial.print("State ");
   //PrintCard();
 
   //Check Master Card
@@ -332,7 +326,7 @@ void setup()
   pinMode(REDPIN, OUTPUT);
   pinMode(GREENPIN, OUTPUT);
 
-  //Serial.begin(9600);
+  Serial.begin(9600);
 }
 
 //------------------------------------------------------------------------------------
