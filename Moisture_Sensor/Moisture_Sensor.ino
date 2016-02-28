@@ -12,10 +12,10 @@ void loop()
   if(SensorValue >= 1000) {
    Serial.println("Sensor is not in the Soil or DISCONNECTED");
   }
-  if(SensorValue < 1000 && s >= 600) { 
+  if(SensorValue < 1000 && SensorValue >= 600) { 
    Serial.println("Soil is DRY");
   }
-  if(SensorValue < 600 && s >= 370) {
+  if(SensorValue < 600 && SensorValue >= 370) {
    Serial.println("Soil is HUMID"); 
   }
   if(SensorValue < 370) {
