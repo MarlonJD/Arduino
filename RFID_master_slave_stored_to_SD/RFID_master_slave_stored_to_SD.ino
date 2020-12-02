@@ -159,35 +159,32 @@ void removeCard()
 
       if (readStr.fail()) 
       {
+        writeFile.close();
         break;
       }
 
       currentCard[readIndex] = value;
-    
       readIndex++;
       if (readIndex > 3)
       {
         //Serial.print("file write ");
-        //PrintCard(currentCard);
         if (!((memcmp(currentCard, readCard, 4)) == 0))
         {
+          PrintCard(currentCard);
           for (writeIndex = 0; writeIndex < 4; writeIndex++)
           {
-            writeFile.print(currentCard[writeIndex]); 
+            writeFile.print(currentCard[writeIndex]);
+            Serial.print(currentCard[writeIndex]);
             writeFile.print(",");
           }
-          writeFile.close();
         }
-      } 
-      readIndex = 0;
+        readIndex = 0;
+      }
     }
   }
 
   sd.remove(cardFile);
   sd.rename(cardTempFile, cardFile);
-  
-  return;
-}
 
 //------------------------------------------------------------------------------------
 int readCardState()
